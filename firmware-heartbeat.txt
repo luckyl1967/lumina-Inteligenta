@@ -1,0 +1,44 @@
+HEARTBEAT — pentru variantele ESP32 / ESP8266 cu polling din conversatie
+
+Nu inlocuieste programul integral. Se integreaza in acelasi sketch, care are
+fbdo, roomPath, FB_LOG, firebaseStarted si handleFirebase().
+Foloseste acelasi client, nu un stream / client TLS suplimentar.
+
+1. Adauga global:
+
+bool heartbeatSent = false;
+uint32_t lastHeartbeatAttempt = 0;
+constexpr uint32_t HEARTBEAT_MS = 30000UL;
+
+2. In handleFirebase(), dupa verificarea Firebase.ready() si dupa:
+
+  if (!ready) { return; }
+
+adauga blocul urmator, INAINTE de verificarea intervalului de polling:
+
+  if (!heartbeatSent ||
+      (uint32_t)(millis() - lastHeartbeatAttempt) >= HEARTBEAT_MS) {
+
+    lastHeartbeatAttempt = millis();
+    heartbeatSent = true;
+
+    String heartbeatPath = roomPath + "/last_seen";
+
+    if (!Firebase.RTDB.setTimestamp(&fbdo, heartbeatPath)) {
+      FB_LOG("[FB] Heartbeat esuat: %s\n",
+             fbdo.errorReason().c_str());
+    }
+
+    // O singura cerere de retea in acest apel.
+    return;
+  }
+
+3. Dupa upload, last_seen va avea o valoare de aproximativ 13 cifre.
+Nu folosi millis() pentru last_seen: nu este timp Unix.
+Nu seta manual last_seen din pagina pentru a forta online.
+Daca RTC/NTP al placii nu este configurat, timestampul server evita aceasta dependenta.
+O scriere esuata se reincearca dupa 30 secunde; indicatorul expira dupa 90 secunde.
+Heartbeatul nu confirma fizic functionarea becului.
+
+IMPORTANT: controlul Firebase ramane sincron; cererea de heartbeat poate intarzia
+citirea butonului, la fel ca celelalte cereri din versiunea actuala.
